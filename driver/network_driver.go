@@ -99,11 +99,24 @@ func (d NetworkDriver) CreateEndpoint(request *network.CreateEndpointRequest) (*
 		return nil, errors.New("No address assigned for endpoint")
 	}
 
-	var addresses []caliconet.IPNet
+	var resultingAddresses []caliconet.IPNet
+	var masks []net.IPMask
+	var addresses []string
+
 	if request.Interface.Address != "" {
-		// Parse the address this function was passed. Ignore the subnet - Calico always uses /32 (for IPv4)
-		ip4, _, err := net.ParseCIDR(request.Interface.Address)
-		d.logger.Printf("Parsed IP %v from (%v) \n", ip4, request.Interface.Address)
+		addresses = append(addresses, request.Interface.Address)
+		masks = append(masks, net.CIDRMask(32, 32))
+	}
+
+	if request.Interface.AddressIPv6 != "" {
+		addresses = append(addresses, request.Interface.AddressIPv6)
+		masks = append(masks, net.CIDRMask(128, 128))
+	}
+
+	for i, address := range addresses {
+		// Parse the address this function was passed.
+		ipAddr, _, err := net.ParseCIDR(address)
+		d.logger.Printf("Parsed IP %v from (%v) \n", ipAddr, address)
 
 		if err != nil {
 			err = errors.Wrapf(err, "Parsing %v as CIDR failed", request.Interface.Address)
@@ -111,7 +124,7 @@ func (d NetworkDriver) CreateEndpoint(request *network.CreateEndpointRequest) (*
 			return nil, err
 		}
 
-		addresses = append(addresses, caliconet.IPNet{IPNet: net.IPNet{IP: ip4, Mask: net.CIDRMask(32, 32)}})
+		resultingAddresses = append(resultingAddresses, caliconet.IPNet{IPNet: net.IPNet{IP: ipAddr, Mask: masks[i]}})
 	}
 
 	endpoint := api.NewWorkloadEndpoint()
@@ -122,7 +135,7 @@ func (d NetworkDriver) CreateEndpoint(request *network.CreateEndpointRequest) (*
 	endpoint.Spec.InterfaceName = "cali" + request.EndpointID[:mathutils.MinInt(11, len(request.EndpointID))]
 	mac, _ := net.ParseMAC(d.fixedMac)
 	endpoint.Spec.MAC = caliconet.MAC{HardwareAddr: mac}
-	endpoint.Spec.IPNetworks = append(endpoint.Spec.IPNetworks, addresses...)
+	endpoint.Spec.IPNetworks = append(endpoint.Spec.IPNetworks, resultingAddresses...)
 
 	// Use the Docker API to fetch the network name (so we don't have to use an ID everywhere)
 	dockerCli, err := dockerClient.NewEnvClient()
