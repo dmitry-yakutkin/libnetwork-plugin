@@ -68,7 +68,7 @@ func (d NetworkDriver) GetCapabilities() (*network.CapabilitiesResponse, error) 
 func (d NetworkDriver) CreateNetwork(request *network.CreateNetworkRequest) error {
 	logutils.JSONMessage(d.logger, "CreateNetwork JSON=%s", request)
 
-	for _, ipData := range request.IPv4Data {
+	for _, ipData := range append(request.IPv4Data, request.IPv6Data...) {
 		if ipData.AddressSpace != CalicoGlobalAddressSpace {
 			err := errors.New("Non-Calico IPAM driver is used")
 			d.logger.Println(err)
@@ -145,8 +145,8 @@ func (d NetworkDriver) CreateEndpoint(request *network.CreateEndpointRequest) (*
 	profile := &api.Profile{
 		Metadata: api.ProfileMetadata{Name: networkData.Name},
 		Spec: api.ProfileSpec{
-			Tags: []string{networkData.Name},
-			EgressRules: []api.Rule{{Action: "allow"}},
+			Tags:         []string{networkData.Name},
+			EgressRules:  []api.Rule{{Action: "allow"}},
 			IngressRules: []api.Rule{{Action: "allow", Source: api.EntityRule{Tag: networkData.Name}}},
 		},
 	}

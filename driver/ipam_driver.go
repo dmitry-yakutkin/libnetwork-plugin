@@ -8,16 +8,16 @@ import (
 	"github.com/pkg/errors"
 
 	"github.com/docker/go-plugins-helpers/ipam"
+	"github.com/projectcalico/libcalico-go/lib/api"
 	datastoreClient "github.com/projectcalico/libcalico-go/lib/client"
 	caliconet "github.com/projectcalico/libcalico-go/lib/net"
 	logutils "github.com/projectcalico/libnetwork-plugin/utils/log"
 	osutils "github.com/projectcalico/libnetwork-plugin/utils/os"
-	"github.com/projectcalico/libcalico-go/lib/api"
 )
 
 type IpamDriver struct {
-	client   *datastoreClient.Client
-	logger   *log.Logger
+	client *datastoreClient.Client
+	logger *log.Logger
 
 	poolIDV4 string
 	poolIDV6 string
@@ -63,15 +63,16 @@ func (i IpamDriver) RequestPool(request *ipam.RequestPoolRequest) (*ipam.Request
 		return nil, err
 	}
 
-	if request.V6 {
-		err := errors.New("IPv6 isn't supported")
-		i.logger.Println(err)
-		return nil, err
-	}
+	var pool, poolID string
 
 	// Default the poolID to the fixed value.
-	poolID := i.poolIDV4
-	pool:="0.0.0.0/0"
+	if request.V6 {
+		pool = "::"
+		poolID = i.poolIDV4
+	} else {
+		poolID = i.poolIDV4
+		pool = "0.0.0.0/0"
+	}
 
 	// If a pool (subnet on the CLI) is specified, it must match one of the
 	// preconfigured Calico pools.
@@ -103,7 +104,7 @@ func (i IpamDriver) RequestPool(request *ipam.RequestPoolRequest) (*ipam.Request
 	resp := &ipam.RequestPoolResponse{
 		PoolID: poolID,
 		Pool:   pool,
-		Data:   map[string]string{"com.docker.network.gateway": "0.0.0.0/0"},
+		Data:   map[string]string{"com.docker.network.gateway": pool},
 	}
 
 	logutils.JSONMessage(i.logger, "RequestPool response JSON=%v", resp)
@@ -124,7 +125,7 @@ func (i IpamDriver) RequestAddress(request *ipam.RequestAddressRequest) (*ipam.R
 		return nil, err
 	}
 
-	var IPs     []caliconet.IP
+	var IPs []caliconet.IP
 
 	if request.Address == "" {
 		// No address requested, so auto assign from our pools.
@@ -192,7 +193,7 @@ func (i IpamDriver) RequestAddress(request *ipam.RequestAddressRequest) (*ipam.R
 
 	// We should only have one IP address assigned at this point.
 	if len(IPs) != 1 {
-		err := errors.New(fmt.Sprintf("Unexpected number of assigned IP addresses. " +
+		err := errors.New(fmt.Sprintf("Unexpected number of assigned IP addresses. "+
 			"A single address should be assigned. Got %v", IPs))
 		i.logger.Println(err)
 		return nil, err
